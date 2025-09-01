@@ -1,0 +1,82 @@
+name: .NET Tests & Auto-commit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+
+  check-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚫 Проверка PR в main
+        run: |
+          if [ "${{ github.event.pull_request.base.ref }}" = "main" ]; then
+            echo "❌ Нельзя отправлять работу в main ветку."
+            exit 1
+          else
+            echo "✅ PR направлен в '${{ github.event.pull_request.base.ref }}', можно запускать тесты."
+          fi
+
+  tests:
+    name: Run test
+    runs-on: windows-latest
+    needs: check-target
+    if: success()   # только если check-target не завершился с ошибкой
+    strategy:
+      matrix:
+        configuration: [Debug]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install .NET Core
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Setup MSBuild.exe
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Restore
+      run: dotnet restore Lab1/Lab1.sln
+
+    - name: Build
+      run: dotnet build Lab1/Lab1.sln --configuration ${{ matrix.configuration }} --no-restore
+
+    - name: Run tests (Purple→Blue→Green→White)
+      id: cascade
+      shell: pwsh
+      run: |
+        $colors = @('Purple', 'Blue', 'Green', 'White')
+        foreach ($c in $colors) {
+          Write-Host "🔎  Запуск тестов класса $c"
+          dotnet test Lab1test/Lab1test.csproj `
+            --filter "FullyQualifiedName~$c" `
+            --configuration $Env:CFG `
+            --no-build `
+            --logger "trx;LogFileName=test-$c.trx"
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅  Класс $c прошёл. Останавливаем каскад."
+            exit 0
+          }
+        }
+        Write-Host "❌  Ни один класс не прошёл."
+        exit 1
+      env:
+        CFG: ${{ matrix.configuration }}
+
+    - name: Upload TRX
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trx-${{ matrix.configuration }}
+        path: '**/test-results.trx'
