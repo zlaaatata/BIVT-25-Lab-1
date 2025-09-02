@@ -1,42 +1,60 @@
 name: .NET Tests & Auto-commit
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+  issue_comment:
 
 permissions:
   contents: write
   pull-requests: write
+  issues: read
 
 jobs:
 
   check-target:
     runs-on: ubuntu-latest
+    outputs:
+      pr_valid: ${{ steps.check.outputs.pr_valid }}
     steps:
       - name: 🚫 Проверка PR в main
+        id: check
+        shell: bash
         run: |
-          if [ "${{ github.event.pull_request.base.ref }}" = "main" ]; then
+          PR_BASE="${{ github.event.pull_request.base.ref || '' }}"
+          echo "Base branch: $PR_BASE"
+          if [ "$PR_BASE" = "main" ]; then
             echo "❌ Нельзя отправлять работу в main ветку."
+            echo "pr_valid=false" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo "✅ PR направлен в '${{ github.event.pull_request.base.ref }}', можно запускать тесты."
-          fi
+            echo "✅ PR направлен в '$PR_BASE', можно запускать тесты."
+            echo "pr_valid=true" >> $GITHUB_OUTPUT
 
   tests:
     name: Run test
     runs-on: windows-latest
     needs: check-target
-    if: success()   # только если check-target не завершился с ошибкой
+    if: |
+      (github.event_name == 'pull_request_target' && needs.check-target.outputs.pr_valid == 'true') ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'issue_comment'
     strategy:
       matrix:
         configuration: [Debug]
 
     steps:
-    - name: Checkout
+    - name: Checkout code safely
       uses: actions/checkout@v4
       with:
+        # Берем код из head PR только если это PR
+        repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        ref: ${{ github.event.pull_request.head.sha || github.ref }}
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install .NET Core
       uses: actions/setup-dotnet@v4
