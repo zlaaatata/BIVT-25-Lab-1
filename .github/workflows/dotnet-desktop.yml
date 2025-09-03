@@ -33,7 +33,7 @@ jobs:
           else
             echo "✅ PR направлен в '$PR_BASE', можно запускать тесты."
             echo "pr_valid=true" >> $GITHUB_OUTPUT
-
+          fi
   tests:
     name: Run test
     runs-on: windows-latest
