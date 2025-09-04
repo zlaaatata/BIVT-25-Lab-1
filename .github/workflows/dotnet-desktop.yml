@@ -76,18 +76,27 @@ jobs:
       run: |
         $colors = @('Purple', 'Blue', 'Green', 'White')
         foreach ($c in $colors) {
-          Write-Host "🔎  Запуск тестов класса ${c}Test"
+          Write-Host "🔎 Проверяем, какие тесты попадут под фильтр '${c}Test'"
+          dotnet test Lab1test/Lab1test.csproj `
+            --list-tests `
+            --filter "ClassName~${c}Test" `
+            --configuration $Env:CFG `
+            --no-build
+
+          Write-Host "🔎 Запуск тестов класса ${c}Test"
           dotnet test Lab1test/Lab1test.csproj `
             --filter "ClassName~${c}Test" `
             --configuration $Env:CFG `
             --no-build `
+            --logger "console;verbosity=detailed" `
             --logger "trx;LogFileName=test-$c.trx"
+
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅  Класс $c прошёл. Останавливаем каскад."
+            Write-Host "✅ Класс $c прошёл. Останавливаем каскад."
             exit 0
           }
         }
-        Write-Host "❌  Ни один класс не прошёл."
+        Write-Host "❌ Ни один класс не прошёл."
         exit 1
       env:
         CFG: ${{ matrix.configuration }}
