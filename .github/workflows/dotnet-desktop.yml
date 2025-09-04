@@ -76,9 +76,9 @@ jobs:
       run: |
         $colors = @('Purple', 'Blue', 'Green', 'White')
         foreach ($c in $colors) {
-          Write-Host "🔎  Запуск тестов класса $c"
+          Write-Host "🔎  Запуск тестов класса ${c}Test"
           dotnet test Lab1test/Lab1test.csproj `
-            --filter "FullyQualifiedName~$c" `
+            --filter "ClassName~${c}Test" `
             --configuration $Env:CFG `
             --no-build `
             --logger "trx;LogFileName=test-$c.trx"
