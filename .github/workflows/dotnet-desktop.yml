@@ -74,29 +74,59 @@ jobs:
       id: cascade
       shell: pwsh
       run: |
-        $colors = @('Purple', 'Blue', 'Green', 'White')
-        foreach ($c in $colors) {
-          Write-Host "🔎 Проверяем, какие тесты попадут под фильтр '${c}Test'"
-          dotnet test Lab1test/Lab1test.csproj `
-            --list-tests `
-            --filter "ClassName~${c}Test" `
-            --configuration $Env:CFG `
-            --no-build
+        $proj = 'Lab1test/Lab1test.csproj'
+        $colors = @('Purple','Blue','Green','White')
+        $listFile = 'tests-list.txt'
 
-          Write-Host "🔎 Запуск тестов класса ${c}Test"
-          dotnet test Lab1test/Lab1test.csproj `
-            --filter "ClassName~${c}Test" `
-            --configuration $Env:CFG `
+        Write-Host ">>> Generating tests list (this may still perform discovery)..."
+        # Список всех тестов (без сборки, чтобы использовать уже собранные артефакты)
+        dotnet test $proj --list-tests --no-build > $listFile 2>&1 || true
+
+        Write-Host "=== tests-list.txt ==="
+        Get-Content $listFile | ForEach-Object { Write-Host $_ }
+
+        foreach ($c in $colors) {
+          Write-Host "-------------------------------"
+          Write-Host "🔎 Ищем тесты для класса: ${c}Test"
+          # Берём первую строку из списка, которая содержит "<...>.<c>Test."
+          $matchLine = Get-Content $listFile | Where-Object { $_ -match "\b${c}Test\." } | Select-Object -First 1
+
+          if (-not $matchLine) {
+            Write-Host "⚠️ Не найдено тестов для ${c}Test в списке. Пропускаем."
+            continue
+          }
+
+          $fullTestName = $matchLine.Trim()
+          Write-Host "Найденая тестовая строка: $fullTestName"
+
+          # Разделим по точкам и уберём последний сегмент (имя метода)
+          $parts = $fullTestName -split '\.'
+          if ($parts.Length -lt 2) {
+            Write-Host "⚠️ Непредвиденный формат строки: $fullTestName"
+            continue
+          }
+          $classFqn = ($parts[0..($parts.Length - 2)]) -join '.'
+          Write-Host "Полное имя класса: $classFqn"
+
+          $filter = "FullyQualifiedName~$classFqn"
+          Write-Host "Запускаем dotnet test с фильтром: $filter"
+
+          dotnet test $proj `
             --no-build `
+            --configuration $Env:CFG `
+            --filter $filter `
             --logger "console;verbosity=detailed" `
             --logger "trx;LogFileName=test-$c.trx"
 
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Класс $c прошёл. Останавливаем каскад."
+            Write-Host "✅ Класс ${c}Test прошёл. Останавливаем каскад."
             exit 0
+          } else {
+            Write-Host "❌ Класс ${c}Test не прошёл — пробуем следующий."
           }
         }
-        Write-Host "❌ Ни один класс не прошёл."
+
+        Write-Host "❌ НИ ОДИН класс не прошёл."
         exit 1
       env:
         CFG: ${{ matrix.configuration }}
